@@ -1,0 +1,174 @@
+---
+title: "02_Carto. Cartographie statistique 1."
+author: "R. Leconte"
+date: "10/01/2022"
+output: html_document
+---
+
+
+
+https://www.data.gouv.fr/fr/datasets/decoupage-administratif-communal-francais-issu-d-openstreetmap/
+
+
+```{r pkg}
+library(sf)
+library(mapview)
+library(mapsf)
+library(viridis)
+```
+
+# 1. Ajouter la géométrie aux données
+
+
+```{r prep}
+# charger la géométrie avec sf
+comsf <- st_read(dsn = "communes-20220101-shp/communes-20220101.shp", 
+                  stringsAsFactors = F)
+
+# filtrer comme un data frame
+comsf_paris <- comsf %>% 
+  filter(insee %in% uu_paris$CODGEO) %>% 
+  rename(CODGEO = insee)
+
+# interroger le système de coordoonées 
+st_crs(comsf_paris)
+
+# projeter le fond de carte dans le référentiel Lambert93 (adapté pour la France)
+comsf_paris <- st_transform(comsf_paris, crs = 2154)
+
+# visualiser la géométrie
+plot(comsf_paris$geometry)
+
+# joindre les données attributaires
+comsf_paris <- left_join(comsf_paris, pvr_paris, by = "CODGEO")
+comsf_paris <- left_join(comsf_paris, disp_paris_ens, by = "CODGEO")
+# vérifier qu'il s'agit toujours d'un objet sf...
+class(comsf_paris)
+# sinon, réassigner
+comsf_paris <- st_sf(comsf_paris)
+
+
+```
+
+# 1 bis: Cartographier sans réfléchir
+
+```{r mapview}
+
+# pour le meilleur
+mapview(comsf_paris, zcol = "TP6018")
+
+# et le pire
+mapview(comsf_paris, zcol = "NBPERS18")
+
+```
+
+
+
+
+# 2. Carte de stock
+
+```{r stock}
+
+mf_map(comsf_paris, col = "grey80", border = "grey50")
+mf_map(comsf_paris, 
+       var = "NBPERS18", 
+       type = "prop", 
+       border = "white", 
+       col = "darkblue", 
+      inches = 0.3, 
+      symbol = "circle",
+       leg_title = "Population communale",
+      add= TRUE)
+mf_layout(title = "Populations communales de l'unité urbaine de Paris (2018)", 
+    credits = "Auteur: R. Leconte, 2022. Données: INSEE, Filosofi, 2018",
+    arrow = FALSE)
+
+
+
+```
+
+
+# 3. Carte de ratio
+
+```{r ratio}
+
+mf_map(comsf_paris, 
+       var = "TP6018", 
+       type = "choro", 
+       breaks = "quantile", # "fixed", "sd", "equal", "pretty", "quantile", "kmeans", "hclust", "bclust", "fisher", "jenks" and "dpih"
+       nbreaks = 6, 
+       pal = viridis(6), 
+       border = "grey50", 
+       leg_title = "Taux de pauvreté au seuil de 60%\n(discrétisation 6 quantiles)")
+mf_layout(title = "La pauvreté dans l'unité urbaine de Paris (2018)", 
+    credits = "Auteur: R. Leconte, 2022. Données: INSEE, Filosofi, 2018",
+    arrow = FALSE)
+# mf_theme("default") # default, ink, dark, agolalight, candy,darkula, iceberg, green, nevermind, jsk or barcelona
+
+
+
+# De l'importance des choix de discrétisation
+
+mf_map(comsf_paris, 
+       var = "TP6018", 
+       type = "choro", 
+       breaks = "equal", 
+       nbreaks = 3,
+       pal = viridis(3), 
+       border = "grey50", 
+       leg_title = "Taux de pauvreté au seuil de 60%\n(discrétisation 6 quantiles)")
+mf_layout(title = "La pauvreté dans l'unité urbaine de Paris (2018)", 
+    credits = "Auteur: R. Leconte, 2022. Données: INSEE, Filosofi, 2018",
+    arrow = FALSE)
+
+```
+
+
+# 4. Carte de typo
+
+```{r typo}
+# nouvelle variable quali
+comsf_paris$dept <- substr(comsf_paris$CODGEO, 1,2)
+
+
+mf_map(comsf_paris, 
+       var = "dept", 
+       type = "typo", 
+       pal = "Zissou 1",
+       border = "grey50", 
+       leg_pos = NA)
+mf_layout(title = "Départements des communes de l'UU de Paris", 
+    credits = "Auteur: R. Leconte, 2022. Données: INSEE, Filosofi, 2018",
+    arrow = FALSE)
+# améliorer la légende
+mf_legend(type = "typo", pos = "topright", val = c("Paris", "Seine et Marne", "Yvelines", "Essone", "Hauts de Seine", "Seine Saint Denis", "Val de Marne", "Val d'Oise"), pal = "Zissou 1", title = "Départements", cex = 0.5)
+
+```
+
+
+# 5. Exporter
+
+```{r export}
+
+# Choisir le format d'export
+pdf("Carte.pdf", # Emplacement et nom du fichier
+width=7, #largeur en pouces - une page A4 fait environ 8 x 11
+height=7 , #hauteur en pouces
+useDingbats=FALSE)
+# Ou bien 
+png("img/Carte.png", # Emplacement et nom du fichier
+    width=7, #largeur en pouces
+    height=7 , #hauteur en pouces
+    res = 300) # résolution en pixels par pouce (DPI) - 300 est idéal pour imprimer
+
+
+
+# Puis on place toutes les lignes de code pour produire la carte
+mf_map()
+
+
+#On cloture le fichier crée
+
+dev.off()
+
+```
