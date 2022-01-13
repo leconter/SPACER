@@ -1,0 +1,166 @@
+---
+title: "04_Autocor. Autocorrélation spatiale"
+author: "R. Leconte"
+date: "07/01/2022"
+output: html_document
+---
+
+
+```{r}
+library(sf)
+library(mapsf)
+library(viridis)
+library(spdep)
+library(rgeoda)
+```
+
+
+#1. Quotient de localisation. 
+
+Où sont les communes de sur et sous-représentation des ménages pauvres à Paris ?
+
+Il nous faut: 
+- une variable mesurant la part des ménages pauvres dans chaque unité spatiale (les communes)
+- une valeur de référence mesurant la part des ménages pauvres dans l'aire de référence (l'unité urbaine de Paris).
+Dans l'UU Paris, le taux de pauvreté à 60% est de 16,5%. Cf. Table à l'échelon des UU. 
+
+
+```{r qloc}
+
+# calcul du quotient de localisation
+qloc <- pvr_paris %>% 
+  select(CODGEO, TP6018) %>% 
+  mutate( QLTP60 = TP6018/16,5)
+
+
+
+# cartographie du quotient de localisation
+
+
+
+# ajout du quotient de localisation à l'objet sf
+comsf_paris <- left_join(comsf_paris, qloc, by = "CODGEO")
+
+# cartographie du quotient
+mf_map(comsf_paris, var = "QLTP60", type = "choro", breaks = c(0.3, 0.9, 1.1, 1.7, 2.3, 2.9), pal = viridis(5), border = "grey50", leg_title = "Quotient de localisation")
+
+
+
+```
+Avec un QL > 1, le taux de pauvreté de la commune est supérieur à la moyenne des taux de pauvreté de l'UU. On peut parler de sur-représentation des ménages pauvres dans ces communes. 
+Avec un QL < 1, il est inférieur. On peut parler de sous-représentation des ménages pauvres dans ces communes. 
+
+#2. Autocorrélation spatiale 
+
+##2.1 Moran global
+
+```{r autoc}
+
+# Préalable : extraction des communes != NA
+
+comsf_pvr <- comsf_paris[!is.na(comsf_paris$TP6018),]
+
+
+# Extraction de la liste des voisins (contiguïté d'ordre 1) pour chaque unité spatiale 
+
+comsf_pvr.nb <- poly2nb(comsf_pvr)
+
+# Création de la matrice de poids permettant de calculer les valeurs moyennes du voisinage
+
+comsf_pvr.lw <- nb2listw(comsf_pvr.nb, zero.policy =  TRUE)
+
+
+
+# Calcul des taux de pauvreté standardisés
+# Transforme la variable en valeurs sans unité, mesurée en écart à la moyenne de la variable
+
+comsf_pvr$TPSTD <- as.vector(scale(comsf_pvr$TP6018))
+
+
+# Diagramme de Moran
+
+moran.plot(comsf_pvr$TPSTD, comsf_pvr.lw, labels = FALSE,
+           xlab = "Part de ménages pauvres par commune",
+           ylab = "Moyenne des parts de ménages pauvres des voisins")
+
+
+# Test du I de Moran
+
+moran.test(comsf_pvr$TPSTD, comsf_pvr.lw, zero.policy =  TRUE, randomisation = FALSE)
+
+
+```
+*Interpréter le diagramme de Moran*
+
+
+- Les observations situées en haut à droite (quadrant 1) présentent des valeurs de la variable plus élevées que la moyenne, dans un voisinage qui leur ressemble (autocorrélation spatiale positive et valeur de l’indice élevé ; structure high-high).
+- En bas à gauche (quadrant 3), les observations présentent des valeurs de la variable plus faibles que la moyenne, dans un voisinage qui leur ressemble (autocorrélation spatiale positive et valeur de l’indice faible ; structure low-low).
+- Les observations situées en bas à droite (quadrant 2) ont des valeurs de la variable plus élevées que la moyenne dans un voisinage qui ne leur ressemble pas (autocorrélation spatiale négative et valeur de l’indice élevé ; structure high-low).
+- En haut à gauche (quadrant 4), les observations présentent des valeurs de la variable plus basses que la moyenne dans un voisinage qui ne leur ressemble pas (autocorrélation spatiale négative et valeur de l’indice faible ; structure low-high). 
+
+
+
+*Interpréter le test de Moran*
+
+Quand I > 0, autocorrélation spatiale positive
+Quand I < 0, autocorrélation spatiale négative
+
+La p.value permet de rejeter l'hypothèse nulle (absence de co-variation) pour un test à 1% si p-value < 0.01.
+
+
+
+
+##2.2 Moran local (LISA)
+
+```{r lisa}
+
+# création de la matrice de poids (format pkg rgeoda)
+
+queen_w <- queen_weights(comsf_pvr)
+
+# calcul de l'indice local de moran
+
+lisa <- local_moran(queen_w, comsf_pvr['TP6018'])
+
+# extraction des clusters lisa
+# choix du seuil de significativité
+
+cats <- lisa_clusters(lisa, cutoff = 0.01)
+
+# ajout de la colonne cluster à la table des communes
+comsf_pvr <- cbind(comsf_pvr, cats)
+
+
+# cartographie des résultats 
+
+mf_map(comsf_paris, col = "white")
+
+mf_map(comsf_pvr, var = "cats", type = "typo", 
+       pal = c("grey80", "red", "blue", "lightblue"), 
+       leg_pos =  "n",
+       add = TRUE)
+mf_legend(type = "typo",
+          val = c("Non significatif", "High-High", "Low-Low", "Low-High"),
+          pal = c("grey80", "red", "blue", "lightblue"),
+          no_data = TRUE,
+          title = "Typologie LISA")
+
+```
+Les indices d’autocorrélation spatiale locale mesurent l’intensité et la significativité de la dépendance locale entre la valeur de la variable d’intérêt dans une unité spatiale donnée et les valeurs de la variable dans les unités spatiales voisines. Ils permettent donc d’identifier la participation de chaque unité spatiale au niveau d’autocorrélation spatiale global. Ils conduisent aussi à mettre en évidence les "poches" de forte autocorrélation spatiale.
+
+Si l’unité spatiale étudiée présente une valeur forte dans un voisinage également marqué par des valeurs fortes, il y a situation d’autocorrélation spatiale positive avec des valeurs fortes, appelée High-High. Si l’unité spatiale présente une valeur faible et son voisinage également, on est également en situation d’autocorrélation spatiale positive mais du côté des valeurs faibles (Low-Low). Si l’unité spatiale possède une valeur forte dans un voisinage dont la moyenne des valeurs n’est pas forte, on parle d’autocorrélation spatiale négative qualifiée de High-Low. Si à l’inverse, l’unité spatiale possède une valeur faible dans un voisinage qui ne lui ressemble pas, on est en situation d’autocorrélation spatiale négative Low-High. Enfin, les autres unités spatiales sont rassemblées dans une dernière catégorie qui décrit une situation non significative.
+
+Les codes codes utilisés par la fonction lisa_cluster sont les suivants: 
+
+0 Not significant
+1 High-High
+2 Low-Low
+3 High-Low
+4 Low-High
+5 Undefined
+6 Isolated
+
+
+Les communes rouges sont donc des espaces de concentration spatiale des ménages pauvres. Les bleues, des ménages riches. 
+Les communes grises constituent un espace plus hétérogène. 
+
