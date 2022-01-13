@@ -11,6 +11,6 @@ Ecole normale supérieure. Département Géographie et territoires.
 
 12/01/2022. 03_Disc: cartographie des discontinuités et lissages
 
-13/01/2022. 
+13/01/2022. 04_Autocor : autocorrélation spatiale
 
 14/01/2022.
