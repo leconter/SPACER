@@ -87,7 +87,7 @@ dec_paris <- dec %>%
 
 ```{r data_socfilter}
 
-# Exemple 1: sélection des variables décrivant les énages monoparentaux
+# Exemple 1: sélection des variables décrivant les ménages monoparentaux
 disp_paris_mono <- disp_paris %>% 
     select(CODGEO, contains("TYM5"))
 
