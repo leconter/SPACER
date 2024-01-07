@@ -1,5 +1,5 @@
 # SPACER
-Espace du cours "Méthodes quantitatives avancées avec R: analyse spatiale"
+Espace du cours "Méthodes quantitatives avancées avec R: analyse spatiale" (2022 & 2023)
 
 Ecole normale supérieure. Département Géographie et territoires. 
 
