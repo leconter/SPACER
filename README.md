@@ -6,6 +6,7 @@ Ecole normale supérieure. Département Géographie et territoires.
 
 
 01_Data: importer, filtrer, explorer les données
+02_Carto : cartographie statistique élémentaire
 
 
 
