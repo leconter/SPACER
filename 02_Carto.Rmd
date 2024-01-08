@@ -1,0 +1,179 @@
+---
+title: "02_Carto. Cartographie statistique 1."
+author: "R. Leconte"
+date: "08/01/2024"
+output: html_document
+---
+
+
+
+https://www.data.gouv.fr/fr/datasets/admin-express/
+
+
+```{r pkg}
+library(sf)
+library(mapview)
+library(mapsf)
+library(viridis)
+```
+
+# 1. Ajouter la géométrie aux données
+
+
+```{r prep}
+# charger la géométrie avec sf
+comsf <- st_read(dsn = "geometry/COMMUNE.shp", 
+                  stringsAsFactors = F)
+
+# filtrer comme un data frame
+comsf_idf <- comsf %>% 
+  filter(INSEE_DEP %in% c("75", "77", "78", "91", "92", "93", "94", "95")) %>% 
+  rename(Code = INSEE_COM)
+
+
+
+plot(comsf_idf$geometry)
+
+# interroger le système de coordoonées 
+st_crs(comsf_idf)
+
+# projeter le fond de carte dans le référentiel Lambert93 (adapté pour la France)
+comsf_idf <- st_transform(comsf_idf, crs = 2154)
+
+# visualiser la géométrie
+plot(comsf_idf$geometry)
+
+# joindre les données attributaires
+comsf_idf <- left_join(comsf_idf, elec_idf, by = "Code")
+
+# vérifier qu'il s'agit toujours d'un objet sf...
+class(comsf_idf)
+# sinon, réassigner
+comsf_idf <- st_sf(comsf_idf)
+
+
+```
+
+# 1 bis: Cartographier sans réfléchir
+
+```{r mapview}
+
+# pour le meilleur
+mapview(comsf_idf, zcol = "MEL_V_E", )
+
+# et le pire
+mapview(comsf_idf, zcol = "Inscrits")
+
+```
+
+
+
+
+# 2. Carte de stock
+
+```{r stock}
+
+mf_map(comsf_idf, col = "grey80", border = "grey50")
+mf_map(comsf_idf, 
+       var = "Inscrits", 
+       type = "prop", 
+       border = "white", 
+       col = "darkblue", 
+      inches = 0.3, 
+      symbol = "circle",
+       leg_title = "Nb. d'inscrits",
+      add= TRUE)
+mf_layout(title = "Inscrits sur les listes électorales des communes d'Ile de France (2022)", 
+    credits = "Auteur: R. Leconte, 2024. Données: Ministère de l'intérieur, 2022",
+    arrow = FALSE)
+
+
+
+```
+
+
+# 3. Carte de ratio
+
+```{r ratio}
+
+mf_map(comsf_idf, 
+       var = "LEP_V_E", 
+       type = "choro", 
+       breaks = "quantile", # "fixed", "sd", "equal", "pretty", "quantile", "kmeans", "hclust", "bclust", "fisher", "jenks" and "dpih"
+       nbreaks = 4, 
+       pal = viridis(4, begin = 0.1, direction = -1), 
+       border = "grey50", 
+       leg_title = "Part des votes exprimés\n(discrétisation quartiles)")
+mf_layout(title = "Le vote Le Pen au 1er tour de la présidentielle 2022", 
+    credits = "Auteur: R. Leconte, 2024. Données: Ministère de l'intérieur, 2022",
+    arrow = FALSE)
+ mf_theme("default") # default, ink, dark, agolalight, candy,darkula, iceberg, green, nevermind, jsk or barcelona
+
+
+
+# De l'importance des choix de discrétisation
+
+
+mf_map(comsf_idf, 
+       var = "LEP_V_E", 
+       type = "choro", 
+       breaks = "sd", # "fixed", "sd", "equal", "pretty", "quantile", "kmeans", "hclust", "bclust", "fisher", "jenks" and "dpih"
+       nbreaks = 4, 
+       pal = viridis(4, begin = 0.1, direction = -1), 
+       border = "grey50", 
+       leg_title = "Part des votes exprimés\n(discrétisation écarts-types)")
+mf_layout(title = "Le vote Le Pen au 1er tour de la présidentielle 2022", 
+    credits = "Auteur: R. Leconte, 2024. Données: Ministère de l'intérieur, 2022",
+    arrow = FALSE)
+ mf_theme("default") # default, ink, dark, agolalight, candy,darkula, iceberg, green, nevermind, jsk or barcelona
+
+
+
+```
+
+
+# 4. Carte de typo
+
+```{r typo}
+
+mf_map(comsf_idf, 
+       var = "Libellé.du.département", 
+       type = "typo", 
+       pal = "Zissou 1",
+       border = "grey50", 
+     leg_pos = NA)
+mf_layout(title = "Départements d'Ile de France", 
+    credits = "Auteur: R. Leconte, 2024. Données: Ministère de l'intérieur, 2022",
+    arrow = FALSE)
+# améliorer la légende
+mf_legend(type = "typo", pos = "topright", val = c("Essone", "Hauts de Seine",  "Paris", "Seine et Marne", "Seine Saint Denis", "Val d'Oise","Val de Marne",  "Yvelines"), pal = "Zissou 1", title = "Départements", cex = 0.5)
+
+```
+
+
+# 5. Exporter
+
+```{r export}
+
+# Choisir le format d'export
+pdf("Carte.pdf", # Emplacement et nom du fichier
+width=7, #largeur en pouces - une page A4 fait environ 8 x 11
+height=7 , #hauteur en pouces
+useDingbats=FALSE)
+# Ou bien 
+# png("Carte.png", # Emplacement et nom du fichier
+#     width=7, #largeur en pouces
+#     height=7 , #hauteur en pouces
+#     res = 300) # résolution en pixels par pouce (DPI) - 300 est idéal pour imprimer
+
+
+
+# Puis on place toutes les lignes de code pour produire la carte
+mf_map(comsf_idf, col = "grey80", border = "grey50")
+
+
+#On cloture le fichier crée
+
+dev.off()
+
+```
