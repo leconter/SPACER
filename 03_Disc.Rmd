@@ -1,0 +1,178 @@
+---
+title: "03_Disc. Cartographie avancée : discontinuités,lissages"
+author: "R. Leconte"
+date: "10/01/2024"
+output: html_document
+---
+```{r pkg}
+library(sf)
+library(mapsf)
+library(potential)
+
+```
+
+# 1. Cartographie des discontinuités
+```{r disc}
+# Auto-intersection des communes (avec buffer, en mètres)
+com_borders  <- st_intersection(st_buffer(comsf_idf, 10), st_buffer(comsf_idf, 10)) 
+
+# Transformation des géométries en 'MULTILINESTRING'
+com_borders  <- st_cast(com_borders ,"MULTILINESTRING")
+
+# Suppression des intersections entre un même polygone
+com_borders  <- com_borders [com_borders$Code != com_borders$Code.1, ] 
+
+# Construction d'un identifiant unique pour chaque frontière
+com_borders$Code1 <- com_borders$Code
+com_borders$Code2 <- com_borders$Code.1
+com_borders$Code <-  paste0(com_borders$Code1, "_", com_borders$Code2)
+rownames(com_borders) <- com_borders$Code
+com_borders  <- com_borders [,c("Code","Code1","Code2","geometry")]
+
+plot(com_borders$geometry)
+
+
+# Récupération de la variable d'intéret, en supprimant la géométrie associée
+vals <- st_set_geometry(x = comsf_idf[, c("Code","MEL_V_E")], 
+                        value = NULL)
+
+# Double jointure pour récupérer les valeurs des communes limitrophes
+com_borders <- merge (x = com_borders, y = vals, by.x = "Code1", by.y = "Code", all.x = T)
+com_borders <- merge (x = com_borders, y = vals, by.x = "Code2", by.y = "Code", all.x = T)
+
+
+# calcul de la discontinuité relative
+com_borders$disc <- com_borders$MEL_V_E.x / com_borders$MEL_V_E.y
+
+# on ne conserve que les 2% des discontinuités les plus fortes
+threshold <- 0.98
+disc <- com_borders[com_borders$disc >= quantile(com_borders$disc,threshold),]
+
+
+# cartographie
+mf_map(comsf_idf, col = "grey80", border = "grey90")
+mf_map(x = disc,
+       var = "disc",
+       type = "prop",
+       col = "blue",
+       lwd_max = 2,
+       add = TRUE)
+
+```
+
+
+Raffiner la carte
+
+```{r cartopretty}
+
+# sélection des labels à ploter
+
+bot <- comsf_idf %>% 
+top_n(wt = MEL_V_E, -5)
+
+top <- comsf_idf %>% 
+  top_n(wt = MEL_V_E, 5)
+
+topbot <- bind_rows(top, bot)
+
+
+# carte
+
+mf_map(comsf_idf, 
+       var = "MEL_V_E", 
+       type = "choro", 
+       breaks = "quantile",
+       nbreaks = 4,
+       pal =  hcl.colors(4, "teal", rev = TRUE), 
+       border = NA, 
+       leg_title = "Vote Mélenchon\n(discrétisation Q4)")
+mf_map(x = disc,
+       col = "red",
+       lwd = 3,
+       add = TRUE)
+mf_label( topbot, 
+          var = "NOM",
+           cex = 0.5,
+           col = "black",
+          overlap = FALSE,
+          lines = TRUE,
+          halo=FALSE)
+mf_layout(title = "Les discontinuités politiques les plus fortes en Ile de France (2022)",
+    credits = "Auteur: R. Leconte, 2024. Données: Ministère de l'intérieur, 2022",
+    arrow = FALSE)
+  mf_theme("default")
+
+```
+
+
+# 2. Cartes lissées
+
+
+```{r pot}
+
+
+# création d'une grille de points régulière pour lesquels seront calculées les valeurs de la variable
+y <- create_grid(x = comsf_idf, res = 5000)
+
+# création d'une matrice de distance entre les points d'origine (centroides des communes), et les points de la grille
+d <- create_matrix(x = comsf_idf, y = y)
+
+# calcul du potentiel
+# fun = exponentielle
+# span = distance à laquelle la valeur vaut 50% de celle du point d'origine
+# beta = exposant de la distance 
+
+y$pot <- potential(x = comsf_idf, y = y, d = d,
+                   var = "LEP_V_E", fun = "e",
+                   span = 3000, beta = 2)
+
+y$pot2 <- 100 * y$pot / max(y$pot)
+
+# calcul de l'équipotentiel : transformation des points en zones
+iso <- equipotential(x = y, var = "pot2", breaks = seq(min(y$pot2),max(y$pot2), 1), mask = comsf_idf)
+
+mf_map(x = iso, var = "center", type = "choro", 
+       breaks = "equal", 
+       nbreaks = 6,
+       pal = hcl.colors(6, "teal", rev = TRUE),
+       lwd = .2,
+       border = NA, 
+       leg_pos = "topleft",
+       leg_val_rnd = 0,
+       leg_title = "Potentiel de vote Le Pen\n(portée = 3km, exposant = 2) ")
+mf_layout(title = "Le potentiel de vote Le Pen en IDF (2022)",
+    credits = "Auteur: R. Leconte, 2024. Données: Ministère de l'intérieur, 2022",
+    arrow = FALSE)
+
+```
+
+
+#3. Cartes bivariées
+
+```{r bivar}
+
+library(biscale)
+library(cowplot)
+
+#création de la typo bivariée
+typo <- bi_class(comsf_idf, x = X..Abs.Ins, y = LEP_V_E, style = "quantile", dim = 3)
+
+map <- ggplot() +
+  geom_sf(data = typo, mapping = aes(fill = bi_class), color = "white", size = 0.05, show.legend = FALSE) +
+  bi_scale_fill(pal = "GrPink", dim = 3) +
+  bi_theme()
+
+
+legend <-  bi_legend(pal = "GrPink",
+                    dim = 3,
+                    xlab = "Part d'absention",
+                    ylab = "Part de vote Le Pen ",
+                    size = 6)
+  
+ggdraw() +
+  draw_plot(map, 0, 0, 1, 1) +
+  draw_plot(legend,0.05, 0.075, 0.2, 0.2)
+
+```
+
+
