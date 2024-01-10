@@ -1,0 +1,167 @@
+---
+title: "04_Autocor. Autocorrélation spatiale"
+author: "R. Leconte"
+date: "11/01/2024"
+output: html_document
+---
+
+
+```{r}
+library(sf)
+library(mapsf)
+library(viridis)
+library(spdep)
+library(rgeoda)
+```
+
+
+#1. Quotient de localisation. 
+
+Où sont les communes de sur et sous-représentation du vote Le Pen en IDF ?
+
+Il nous faut: 
+- une variable mesurant la part du vote Le Pen dans chaque unité spatiale (les communes)
+- une valeur de référence mesurant la part du vote Le Pen dans l'aire de référence (l'Ile de France).
+En IDF, la part du vote Le Pen est de 12,97%. Cf. Table à l'échelon des régions (ou calcul à partir des valeurs absolues : pas de moyenne des pourcentages !!). 
+
+
+```{r qloc}
+
+# calcul du quotient de localisation
+comsf_idf <- comsf_idf %>% 
+  mutate( QL_LEP = LEP_V_E/12.97)
+
+
+# cartographie du quotient de localisation
+
+summary(comsf_idf$QL_LEP)
+
+
+mf_map(comsf_idf, 
+       var = "QL_LEP", 
+       type = "choro", 
+       breaks = c(0,1, 2, 3,4, 5), 
+       pal = viridis(5, direction = -1), 
+       border = "grey50", 
+       leg_title = "Quotient de localisation")
+
+
+
+```
+Avec un QL > 1, le vote Le Pen de la commune est supérieur à la moyenne des vote Le Pen de la région. On peut parler de sur-représentation des électeurs de Le Pen dans ces communes. 
+Avec un QL < 1, il est inférieur. On peut parler de sous-représentation des des électeurs de Le Pen dans ces communes. 
+
+#2. Autocorrélation spatiale 
+
+##2.1 Moran global
+
+```{r autoc}
+
+# Préalable : extraction des communes != NA
+
+comsf_idf <- comsf_paris[!is.na(comsf_paris$TP6018.x),]
+
+
+# Extraction de la liste des voisins (contiguïté d'ordre 1) pour chaque unité spatiale 
+
+comsf_idf.nb <- poly2nb(comsf_idf , queen = T)
+
+# Création de la matrice de poids permettant de calculer les valeurs moyennes du voisinage
+
+comsf_idf.lw <- nb2listw(comsf_idf.nb, zero.policy =  TRUE)
+
+
+
+# Calcul des part de vote standardisés
+# Transforme la variable en valeurs sans unité, mesurée en écart à la moyenne de la variable
+
+comsf_idf$LEP_V_E_s <- as.vector(scale(comsf_idf$LEP_V_E))
+
+
+# Diagramme de Moran
+
+moran.plot(comsf_idf$LEP_V_E_s, comsf_idf.lw, labels = FALSE,
+           xlab = "Part du vote Le Pen par commune",
+           ylab = "Moyenne des parts du vote Le Pen des voisins")
+
+
+# Test du I de Moran
+
+moran.test(comsf_idf$LEP_V_E_s, comsf_idf.lw, zero.policy =  TRUE, randomisation = FALSE)
+
+
+```
+*Interpréter le diagramme de Moran*
+
+
+- Les observations situées en haut à droite (quadrant 1) présentent des valeurs de la variable plus élevées que la moyenne, dans un voisinage qui leur ressemble (autocorrélation spatiale positive et valeur de l’indice élevé ; structure high-high).
+- En bas à gauche (quadrant 3), les observations présentent des valeurs de la variable plus faibles que la moyenne, dans un voisinage qui leur ressemble (autocorrélation spatiale positive et valeur de l’indice faible ; structure low-low).
+- Les observations situées en bas à droite (quadrant 2) ont des valeurs de la variable plus élevées que la moyenne dans un voisinage qui ne leur ressemble pas (autocorrélation spatiale négative et valeur de l’indice élevé ; structure high-low).
+- En haut à gauche (quadrant 4), les observations présentent des valeurs de la variable plus basses que la moyenne dans un voisinage qui ne leur ressemble pas (autocorrélation spatiale négative et valeur de l’indice faible ; structure low-high). 
+
+
+
+*Interpréter le test de Moran*
+
+Quand I > 0, autocorrélation spatiale positive
+Quand I < 0, autocorrélation spatiale négative
+
+La p.value permet de rejeter l'hypothèse nulle (absence de co-variation) pour un test à 1% si p-value < 0.01.
+
+
+
+
+##2.2 Moran local (LISA)
+
+```{r lisa}
+
+# création de la matrice de poids (format pkg rgeoda)
+
+queen_w <- queen_weights(comsf_idf )
+
+# calcul de l'indice local de moran
+
+lisa <- local_moran(queen_w, comsf_idf ['LEP_V_E'])
+
+# extraction des clusters lisa
+# choix du seuil de significativité
+
+cats <- lisa_clusters(lisa, cutoff = 0.01)
+
+# ajout de la colonne cluster à la table des communes
+comsf_idf  <- cbind(comsf_idf , cats)
+
+
+# cartographie des résultats 
+
+mf_map(comsf_idf, col = "white")
+
+mf_map(comsf_idf , var = "cats", type = "typo", 
+       pal = c("grey80", "red", "blue", "lightblue"), 
+       leg_pos =  "n",
+       add = TRUE)
+mf_legend(type = "typo",
+          val = c("Non significatif", "High-High", "Low-Low", "Low-High"),
+          pal = c("grey80", "red", "blue", "lightblue"),
+          no_data = TRUE,
+          title = "Typologie LISA")
+
+```
+Les indices d’autocorrélation spatiale locale mesurent l’intensité et la significativité de la dépendance locale entre la valeur de la variable d’intérêt dans une unité spatiale donnée et les valeurs de la variable dans les unités spatiales voisines. Ils permettent donc d’identifier la participation de chaque unité spatiale au niveau d’autocorrélation spatiale global. Ils conduisent aussi à mettre en évidence les "poches" de forte autocorrélation spatiale.
+
+Si l’unité spatiale étudiée présente une valeur forte dans un voisinage également marqué par des valeurs fortes, il y a situation d’autocorrélation spatiale positive avec des valeurs fortes, appelée High-High. Si l’unité spatiale présente une valeur faible et son voisinage également, on est également en situation d’autocorrélation spatiale positive mais du côté des valeurs faibles (Low-Low). Si l’unité spatiale possède une valeur forte dans un voisinage dont la moyenne des valeurs n’est pas forte, on parle d’autocorrélation spatiale négative qualifiée de High-Low. Si à l’inverse, l’unité spatiale possède une valeur faible dans un voisinage qui ne lui ressemble pas, on est en situation d’autocorrélation spatiale négative Low-High. Enfin, les autres unités spatiales sont rassemblées dans une dernière catégorie qui décrit une situation non significative.
+
+Les codes codes utilisés par la fonction lisa_cluster sont les suivants: 
+
+0 Not significant
+1 High-High
+2 Low-Low
+3 High-Low
+4 Low-High
+5 Undefined
+6 Isolated
+
+
+Les communes rouges sont donc des espaces de concentration spatiale des électeurs pour Le Pen. Les bleues, de concentration des élécteurs contre Le Pen. 
+Les communes grises constituent un espace plus hétérogène. 
+
