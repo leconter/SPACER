@@ -9,6 +9,10 @@ Ecole normale supérieure. Département Géographie et territoires.
 
 02_Carto : cartographie statistique élémentaire
 
+03_Disc : cartographie statistique avancée : discontinuités, lissages, bivariée
+
+04_Autocor : autocorrélation spatiale
+
 
 
 
