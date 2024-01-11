@@ -13,6 +13,8 @@ Ecole normale supérieure. Département Géographie et territoires.
 
 04_Autocor : autocorrélation spatiale (11/01/24)
 
+05_GWR : régression géographiquement pondérée (12/01/2024)
+
 
 
 
