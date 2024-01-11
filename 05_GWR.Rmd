@@ -1,0 +1,75 @@
+---
+title: "05_GWR : régréssion géographiquement pondérée"
+author: "R. Leconte"
+date: "2024-01-12"
+output: html_document
+---
+
+
+```{r}
+library(sp)
+library(GWmodel)
+```
+#1. Préparation des données
+
+```{r}
+
+# le package GWmodel n'est pas compatible avec 'sf', transformer en 'sp'
+
+comsp <- as_Spatial(comsf_idf) 
+
+# création de la matrice de distance entre unités spatiales
+
+matDist <- gw.dist(dp.locat = coordinates(comsp))
+
+```
+
+
+#2. Pondération spatiale des valeurs 
+
+```{r}
+nNeigh.gauss <- bw.gwr(data = comsp, approach = "AICc",
+                     kernel = "gaussian",
+                     adaptive = TRUE,
+                     dMat = matDist,
+                     formula = MEL_V_E ~  CSP_ouv + CSP_empl + CSP_cpis + CSP_pi + CSP_retr + CSP_arti + CSP_ssact)
+
+```
+#3. Régression 
+
+```{r}
+GWR.exp <- gwr.basic(data = comsp, 
+                     bw = nNeigh.exp, 
+                     kernel = "gaussian", 
+                     adaptive = TRUE,  
+                     dMat = matDist, 
+                     formula = MEL_V_E ~  CSP_ouv + CSP_empl + CSP_cpis + CSP_pi + CSP_retr + CSP_arti + CSP_ssact)
+
+GWR.exp
+```
+#4. Cartographie des paramètres
+
+```{r}
+# stockage des résultats du modèle dans notre objet sf
+
+comsf_idf$localR2 <- GWR.exp$SDF$Local_R2
+comsf_idf$coef_arti <-GWR.exp$SDF$CSP_arti
+
+# cartes 
+
+mf_map(comsf_idf,
+       var = "localR2", 
+       type = "choro", 
+       breaks = "quantile",
+       nbreaks = 4)
+
+mf_map(comsf_idf,
+       var = "coef_arti", 
+       type = "choro", 
+       breaks = c(-0.7, -0.5, -0.2, 0, 0.2, 0.5), 
+       pal = c("darkblue","blue", "lightblue", "red", "red4"))
+
+
+
+```
+
