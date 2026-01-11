@@ -1,16 +1,10 @@
 # SPACER
-Espace du cours "Méthodes quantitatives avancées avec R: analyse spatiale" (2022 & 2023)
+Espace du cours "Méthodes quantitatives avancées avec R: analyse spatiale" (2026)
 
 Ecole normale supérieure. Département Géographie et territoires. 
 
+Données : 
+Recensement de la population - Fichier détail
+Migrations résidentielles : localisation à la commune de résidence et au pays de résidence antérieure en 2022 
 
-
-01_Data: importer, filtrer, explorer les données
-
-02_Carto: données géométriques, cartographie statistique
-
-03_Disc: cartographie des discontinuités et lissages
-
-04_Autocor : autocorrélation spatiale
-
-
+https://www.insee.fr/fr/statistiques/8589858?sommaire=8590191  
