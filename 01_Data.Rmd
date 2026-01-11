@@ -1,0 +1,153 @@
+---
+title: "01_Data. Import, filtrage, enrichissement, exploration"
+author: "R. Leconte"
+date: "12/01/2026"
+output: html_document
+---
+
+Données:
+
+
+Recensement de la population - Fichier détail
+Migrations résidentielles : localisation à la commune de résidence et au pays de résidence antérieure en 2022 
+
+https://www.insee.fr/fr/statistiques/8589858?sommaire=8590191 
+
+Objectifs: 
+
+- importer les données
+- filtrage géographique des données
+- mise en forme des données
+- enrichissement des données
+- exploration des données
+
+
+```{r pkg_wd}
+
+library(dplyr)
+library(ggplot2)
+library(arrow)   # lecture des fichiers parquet
+
+
+setwd("D:/ENS_ULM/cours/SPACER/2026/")
+
+
+```
+
+
+
+
+# 1. Préparation des données
+## 1.1. Chargement
+
+```{r data}
+# Table des données
+
+# Importantion de toute la table au format csv (lourd)
+
+migcom <- read.csv("RP2022_migcom/FD_MIGCOM_2022.csv", sep = ";")
+
+# Importation au format parquet (plus léger)
+
+mig_idf <- open_dataset("RP2022_miggco.parquet") %>%
+  collect()
+
+
+```
+
+
+## 1.2. Filtrage géographique (sélection des individus)
+
+```{r data_geofilter}
+
+# Extraction des communes faisant partie de l'IDF
+
+dep_idf <- c("75", "77", "78", "91", "92", "93", "94", "95")
+
+migcom_idf <- migcom %>%
+  mutate(DEP = substr(COMMUNE, 1, 2)) %>%
+  mutate(DEPAN = substr(DCRAN, 1, 2)) %>% 
+  filter(
+    DEP %in% dep_idf |
+    DEPAN %in% dep_idf)
+
+```
+
+
+# 2. Préparation des données
+
+```{r data_prep}
+
+#Harmonisation des codes arrondisssement
+ migcom_idf <-migcom_idf %>% 
+  mutate(CODGEO = case_when(COMMUNE == "75056" & !is.na(ARM) ~ ARM,
+           TRUE ~ COMMUNE))
+
+
+# calcul des soldes migratoires communaux
+
+migcom_idf <- migcom_idf %>% 
+  mutate(ENSO = ifelse(!(DEP %in% dep_idf), "S", "R")) %>% 
+  mutate(ENSO = ifelse(ENSO == "R" & IRAN >= 3, "E",ENSO))
+
+
+entrants <- migcom_idf %>%
+  select(CODGEO, IPONDI, ENSO) %>% 
+  group_by(CODGEO) %>%
+  summarise(entrants = sum(IPONDI[ENSO == "E"]))
+
+sortants <- migcom_idf %>%
+  select(DCRAN, IPONDI, ENSO) %>% 
+  group_by(DCRAN) %>%
+  summarise(sortants = sum(IPONDI[ENSO == "S"]))
+
+solde <- full_join(entrants, sortants, by = c("CODGEO"= "DCRAN"))
+
+solde <- solde %>% 
+  mutate(solde = entrants-sortants) %>% 
+  mutate(dep = substr(CODGEO, 1, 2) ) %>% 
+  filter(dep %in% dep_idf)
+
+
+```
+
+
+
+
+# 2. Exploration statistique et graphique
+
+Quelques fonctions utiles 
+
+```{r explor}
+
+# Contrôler la présence de valeurs manquantes dans une variable
+table(is.na(solde$solde))
+
+# Connaitre le résumé statistique
+
+summary(solde$solde)
+
+
+# Observer la distribution d'une variable
+# Courbe de densité
+ggplot(solde, aes(x=solde)) + 
+  geom_density()+
+   scale_y_continuous(labels = scales::comma)+ # se débarasser de la notation scientifique
+  # Habiller le graphique
+      ylab("Densité de probabilité")+
+  xlab("Solde migratoire")+
+  ggtitle("Solde migratoire par commune en Ile de France, 2022")
+
+
+# Boîte à moustache
+ggplot(solde, aes(x = solde))+
+  geom_boxplot()
+
+
+
+```
+
+
+
+
+
