@@ -87,19 +87,30 @@ migcom_idf <- migcom %>%
 # calcul des soldes migratoires communaux
 
 migcom_idf <- migcom_idf %>% 
-  mutate(ENSO = ifelse(!(DEP %in% dep_idf), "S", "R")) %>% 
-  mutate(ENSO = ifelse(ENSO == "R" & IRAN >= 3, "E",ENSO))
+  mutate(ENSO = ifelse(IRAN <= 2, "R", "M")) %>% 
+  mutate(ENSO = ifelse(IRAN >=3 & DEP %in% dep_idf, "E", ENSO)) %>% 
+  mutate(ENSO = ifelse(IRAN >=3 & DEPAN %in% dep_idf, "S", ENSO))
 
 
+#habitent une commune de la région aujourd'hui et ont fait une mobilité résidentielle
 entrants <- migcom_idf %>%
-  select(CODGEO, IPONDI, ENSO) %>% 
+  #garder ceux qui habitent la région aujourd'hui
+  filter(DEP %in% dep_idf) %>% 
+  #garder ceux qui ont fait une mobilité résidentielle 
+  filter(IRAN >= 3) %>% 
+  select(CODGEO, IPONDI) %>% 
   group_by(CODGEO) %>%
-  summarise(entrants = sum(IPONDI[ENSO == "E"]))
+  summarise(entrants = sum(IPONDI))
 
+#habitaient une commune de la région il y a 1 an et ont fait une mobilité résidentielle
 sortants <- migcom_idf %>%
-  select(DCRAN, IPONDI, ENSO) %>% 
+  #garder ceux qui habitaient la région avant
+    filter(DEPAN %in% dep_idf) %>% 
+  #garder ceux qui ont fait une mobilité résidentielle
+    filter(IRAN >= 3) %>% 
+  select(DCRAN, IPONDI) %>% 
   group_by(DCRAN) %>%
-  summarise(sortants = sum(IPONDI[ENSO == "S"]))
+  summarise(sortants = sum(IPONDI))
 
 solde <- full_join(entrants, sortants, by = c("CODGEO"= "DCRAN"))
 
@@ -146,6 +157,7 @@ ggplot(solde, aes(x = solde))+
 
 
 ```
+
 
 
 
