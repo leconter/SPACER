@@ -1,0 +1,213 @@
+---
+title: "02_Carto. Cartographie statistique 1."
+author: "R. Leconte"
+date: "13/01/2026"
+output: html_document
+---
+
+
+
+https://www.insee.fr/fr/information/8063612 
+
+
+```{r pkg}
+library(sf)
+library(mapsf)
+library(viridis)
+```
+
+# 1. Ajouter la géométrie aux données
+
+
+```{r prep}
+# charger la géométrie avec sf
+comsf <- st_read(dsn = "com_aav2020_2024/com_aav2020_2024.shp", 
+                  stringsAsFactors = F)
+
+
+########
+# récupérer les arrondissements municipaux 
+#https://geoservices.ign.fr/adminexpress 
+
+arrt <- st_read("arrondissement_municipal/ARRONDISSEMENT_MUNICIPAL.shp")
+
+
+arrt <- left_join(arrt, st_drop_geometry(comsf),  by = c("INSEE_COM" = "codgeo"))
+
+
+arrt <- arrt %>% 
+  select (NOM, INSEE_ARM, aav2020, libaav2020, cateaav, dep, reg, geometry)%>% 
+  rename(libgeo = NOM, codgeo =  INSEE_ARM) 
+
+
+comsf_arrt <- rbind(comsf, arrt)
+
+comsf_arrt <- comsf_arrt %>%
+  filter(!codgeo %in% c("75056","69123","13055"))
+
+#######
+
+
+# filtrer comme un data frame
+comsf_idf <- comsf_arrt %>% 
+  filter(dep %in% dep_idf) %>% 
+  rename(CODGEO = codgeo)
+
+plot(comsf_idf$geometry)
+
+# interroger le système de coordoonées 
+st_crs(comsf_idf)
+
+# projeter le fond de carte dans le référentiel Lambert93 (adapté pour la France)
+comsf_idf <- st_transform(comsf_idf, crs = 2154)
+
+# visualiser la géométrie
+plot(comsf_idf$geometry)
+
+
+
+# joindre les données attributaires
+comsf_idf <- left_join(comsf_idf, tab, by = "CODGEO")
+
+# vérifier qu'il s'agit toujours d'un objet sf...
+class(comsf_idf)
+# sinon, réassigner
+comsf_idf <- st_sf(comsf_idf)
+
+```
+
+
+
+
+# 2. Carte de stock
+
+```{r stock}
+
+mf_map(comsf_idf, col = "grey80", border = "grey50")
+mf_map(comsf_idf, 
+       var = "POP", 
+       type = "prop", 
+       border = "white", 
+       col = "darkblue", 
+      inches = 0.1, 
+      symbol = "circle",
+       leg_title = "Population",
+      add= TRUE)
+mf_layout(title = "Population des communes d'Ile de France (2022)", 
+    credits = "Auteur: R. Leconte, 2026. Données: INSEE, RP 2022",
+    arrow = FALSE)
+
+
+
+```
+
+
+# 3. Carte de ratio
+
+```{r ratio}
+
+mf_map(comsf_idf, 
+       var = "SEXRATIO", 
+       type = "choro", 
+       breaks = "quantile", # "fixed", "sd", "equal", "pretty", "quantile", "kmeans", "hclust", "bclust", "fisher", "jenks" and "dpih"
+       nbreaks = 6, 
+       pal = viridis(6, begin = 0.1, direction = -1), 
+       border = "grey50", 
+       leg_title = "Rapport hommes-femmes\n(discrétisation quantiles)")
+mf_layout(title = "Le rapport hommes-femmes dans les communes d'Ile de France (2022)", 
+    credits = "Auteur: R. Leconte, 2026. Données: INSEE, RP 2022",
+    arrow = FALSE)
+ mf_theme("default") # default, ink, dark, agolalight, candy,darkula, iceberg, green, nevermind, jsk or barcelona
+
+
+
+# De l'importance des choix de discrétisation
+
+
+mf_map(comsf_idf, 
+       var = "SEXRATIO", 
+       type = "choro", 
+       breaks = "sd", # "fixed", "sd", "equal", "pretty", "quantile", "kmeans", "hclust", "bclust", "fisher", "jenks" and "dpih"
+       nbreaks = 6, 
+       pal = viridis(6, begin = 0.1, direction = -1), 
+       border = "grey50", 
+       leg_title = "Rapport hommes-femmes\n(discrétisation écarts-types)")
+mf_layout(title = "Le rapport hommes-femmes dans les communes d'Ile de France (2022)", 
+    credits = "Auteur: R. Leconte, 2026. Données: INSEE, RP 2022",
+    arrow = FALSE)
+ mf_theme("default") # default, ink, dark, agolalight, candy,darkula, iceberg, green, nevermind, jsk or barcelona
+
+
+
+```
+
+
+# 4. Carte de typo
+
+```{r typo}
+
+mf_map(comsf_idf, 
+       var = "cateaav", 
+       type = "typo", 
+       pal = "Zissou 1",
+       border = "grey50", 
+     leg_pos = NA)
+mf_layout(title = "Zonage en Aire d'attration des villes de l'Ile de France", 
+    credits = "Auteur: R. Leconte, 2026. Données: INSEE, Zonage AAV 2020, 2024",
+    arrow = FALSE)
+# améliorer la légende
+mf_legend(type = "typo", pos = "topright", val = c("Pôle principal", "Commune centre",  "Pôle secondaire", "Couronne"), pal = "Zissou 1", title = "Catégorie")
+
+```
+
+# 4. Combiner typo et stock
+
+```{r typo}
+comsf_idf <- comsf_idf %>% 
+  mutate(solde_signe = ifelse(solde >= 0, "Croissance migratoire", "Décroissance migratoire"))
+
+table(comsf_idf$solde_signe)
+
+mf_map(comsf_idf, col = "grey80", border = "grey50")
+mf_map(comsf_idf, 
+       var = c("solde","solde_signe"), 
+       type = "prop_typo", 
+       pal = c("red", "blue"),
+       border = "grey50",
+        inches = 0.1, 
+      symbol = "circle",
+       leg_title = c("Solde migratoire", "Signe du solde"),
+     leg_pos = "topright")
+mf_layout(title = "Solde migratoire des communes l'Ile de France (2022)", 
+    credits = "Auteur: R. Leconte, 2026. Données: INSEE, RP 2022",
+    arrow = FALSE)
+
+
+```
+
+# 5. Exporter
+
+```{r export}
+
+# Choisir le format d'export
+pdf("Carte.pdf", # Emplacement et nom du fichier
+width=7, #largeur en pouces - une page A4 fait environ 8 x 11
+height=7 , #hauteur en pouces
+useDingbats=FALSE)
+# Ou bien 
+# png("Carte.png", # Emplacement et nom du fichier
+#     width=7, #largeur en pouces
+#     height=7 , #hauteur en pouces
+#     res = 300) # résolution en pixels par pouce (DPI) - 300 est idéal pour imprimer
+
+
+
+# Puis on place toutes les lignes de code pour produire la carte
+mf_map(comsf_idf, col = "grey80", border = "grey50")
+
+
+#On cloture le fichier crée
+
+dev.off()
+
+```
