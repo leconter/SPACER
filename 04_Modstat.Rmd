@@ -1,0 +1,194 @@
+---
+title: "04_Modstat. Modélisation statistique"
+author: "R. Leconte"
+date: "2026-01-15"
+output: html_document
+---
+
+
+
+```{r pkg}
+library(sf)
+library(mapsf)
+library(dplyr)
+library(tidyr)
+library(tibble)
+
+setwd("D:/ENS_ULM/cours/SPACER/2026/")
+
+```
+
+
+
+# 1. Préparation des données
+## 1.1. Chargement
+
+```{r data}
+# Table des données
+
+# Importantion de la table filtrée sur la région d'intérêt
+
+migcom_idf <- read.csv("migcom_idf.csv")
+
+
+```
+
+
+## 1.2. Préparation de la table de flux
+
+
+```{r data_flow}
+# Table des flux internes à la région
+
+# Extraction des communes faisant partie de l'IDF
+
+dep_idf <- c("75", "77", "78", "91", "92", "93", "94", "95")
+
+flow <- migcom_idf %>% 
+  filter(DEP %in% dep_idf & DEPAN %in% dep_idf) %>% 
+  select(DEP, DEPAN, IPONDI) %>% 
+  group_by(DEP,DEPAN) %>% 
+  summarise(FIJ = sum(IPONDI)) %>% 
+  filter(DEP != DEPAN) %>% 
+  rename(ORIG = DEPAN, DEST = DEP)
+
+
+# Calcul des sommes marginales
+
+entrants <- flow %>% 
+  group_by(DEST) %>%
+  summarise(entrants = sum(FIJ))
+sortants <- flow %>% 
+  group_by(ORIG) %>% 
+  summarise(sortants = sum(FIJ))
+
+           
+```
+
+
+
+## 1.2 Préparation de la table des distances
+
+
+```{r data_geo}
+# regrouper les communes en département 
+depsf_idf <- comsf_idf %>% 
+  group_by(dep) %>%
+  summarise(geometry = st_union(geometry), .groups = "drop")
+
+# Calcul des distances entre departements
+
+centres <- st_centroid(depsf_idf)
+dist_mat <- st_distance(centres)
+
+rownames(dist_mat) <- centres$dep
+colnames(dist_mat) <- centres$dep
+
+dist_long <- dist_mat %>%
+  as.data.frame() %>%
+  rownames_to_column("id1") %>% 
+  pivot_longer(
+    cols = -id1,
+    names_to = "id2",
+    values_to = "distance") %>% 
+  rename(ORIG = id1, DEST = id2) %>% 
+  filter(ORIG != DEST)
+
+```
+
+
+## 1.3 Assembler la table pour analyse
+
+```{r}
+
+tab <- flow %>% 
+  #on ajoute le volume total de sortants
+  left_join(sortants, by= "ORIG") %>% 
+  # on ajoute le volume total d'entrants
+  left_join(entrants, by= "DEST") %>% 
+  # on ajoute les distances entre origine et destination
+  left_join(dist_long, by= c("ORIG" = "ORIG", "DEST" = "DEST")) 
+
+
+```
+
+# 2. Modèle
+
+## 2. 1 Calcul du modèle
+```{r}
+
+mod<-glm(
+  # on veut expliquer le flux entre chaque unité spatiale
+  FIJ ~
+  # tel qu'il est proportionnel au volume total des entrants et sortants de chaque unité spatiale
+    sortants + entrants +
+    # et proportionnel à la distance qui les sépare
+    log(distance),
+  
+  data= tab,family=poisson)
+
+summary(mod)
+
+1 - mod$deviance / mod$null.deviance
+```
+
+
+## 2.2 Analyse des résidus
+```{r}
+
+#ajout des valeurs estimées et des résidus (bruts et relatifs)
+
+tab$F_ESTIM <- round(mod$fitted.values, 2)
+tab$RES <- round(tab$FIJ-tab$F_ESTIM,2)
+tab$RES_REL <- round(tab$FIJ/tab$F_ESTIM,2)
+sign <- tab$RES/abs(tab$RES)
+tab$RES_CHI2 <- round(sign*(tab$FIJ-tab$F_ESTIM)**2/tab$F_ESTIM,2)
+
+
+```
+
+## 2.3 Cartographie des résidus 
+
+```{r carto res}
+
+
+pos_res <- tab %>% 
+  select(ORIG, DEST, RES_CHI2) %>% 
+  filter(RES_CHI2>=1000)
+
+
+
+links_pos <-
+  mf_get_links(
+    x = depsf_idf,
+    df = pos_res,
+    x_id = "dep",
+    df_id = c("ORIG", "DEST"))
+
+
+mf_map(depsf_idf,
+       col = "grey",
+       border = "#3b3b3b",
+       add = TRUE)
+mf_map(
+  links_pos,
+  var = "RES_CHI2",
+    col = 
+    "red",
+  border = "white",
+  type = "prop",
+  inches = 3,
+  leg_title_cex = 0.8,
+  leg_val_cex   = 0.6,
+  leg_pos = "topright",
+  leg_title = "Résidus standardisés"
+)
+mf_label(depsf_idf, 
+         var = "dep")
+mf_layout(title = "Résidus positifs d'un modèle gravitaire \nsur les mobilités résidentielles en Ile de France", 
+    credits = "Auteur: R. Leconte, 2026. Données: INSEE, RP 2022",
+    arrow = FALSE)
+
+
+```
+
