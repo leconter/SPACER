@@ -9,7 +9,6 @@ output: html_document
 ```{r pkg}
 library(sf)
 library(mapsf)
-library(flowmapper)
 library(dplyr)
 
 
@@ -220,3 +219,4 @@ mf_layout(title = "Quitter Paris",
 
 
 ```
+
